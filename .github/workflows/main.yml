@@ -1,0 +1,169 @@
+name: TecnoHostal · Comprovació individual
+
+# Què fa aquest workflow (NO L'HAS DE TOCAR):
+#   1. Compila i passa tots els tests.
+#   2. Publica un check run "Challenge Score" amb una línia per classe de test,
+#      per exemple "Ticket1_VipDiscountTest 3/3". El dashboard del professor llegeix
+#      aquestes línies: cada classe és una columna.
+#   3. Calcula la nota: tests de Ticket*Test que passen / 18 x 10.
+#      ExistingFeatureTest no suma punts: només avisa si has trencat alguna cosa.
+#   La nota no s'envia enlloc: el professor corregeix a mà a partir d'aquest resultat.
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  checks: write
+
+# Si fas dos push seguits, es cancel·la el primer: només compta l'últim commit.
+concurrency:
+  group: tecnohostal-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # Avisa si encara no has posat el teu nom, però NO atura la correcció.
+      - name: Comprova student-info.json
+        id: student
+        continue-on-error: true
+        run: |
+          NAME=""
+          if [ -f student-info.json ]; then
+            NAME=$(jq -r '.name // empty' student-info.json)
+          fi
+          case "$NAME" in
+            ""|null|"ESCRIU AQUI EL TEU NOM"|"ESCRIU AQUÍ EL TEU NOM"|"WRITE YOUR NAME HERE")
+              echo "ok=false" >> "$GITHUB_OUTPUT"
+              echo "name=" >> "$GITHUB_OUTPUT"
+              TITLE="Falta el teu nom a student-info.json"
+              EXISTING=$(gh issue list --repo "${{ github.repository }}" --state open \
+                --json title --jq "[.[] | select(.title == \"$TITLE\")] | length" 2>/dev/null || echo 0)
+              if [ "${EXISTING:-0}" = "0" ]; then
+                gh issue create --repo "${{ github.repository }}" --title "$TITLE" \
+                  --body "Obre \`student-info.json\`, posa-hi el teu nom real i fes commit + push." || true
+              fi
+              ;;
+            *)
+              echo "ok=true" >> "$GITHUB_OUTPUT"
+              echo "name=$NAME" >> "$GITHUB_OUTPUT"
+              echo "Alumne: $NAME"
+              ;;
+          esac
+
+      - name: Configura el JDK
+        uses: actions/setup-java@v5
+        with:
+          # Ha de coincidir amb <java.version> del pom.xml
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Passa els tests
+        continue-on-error: true
+        run: mvn -B test
+
+      - name: Calcula la puntuació
+        id: score
+        if: always()
+        run: |
+          SUMMARY=""
+          TICKET_T=0; TICKET_P=0; BASE_T=0; BASE_P=0
+          shopt -s nullglob
+          for report in target/surefire-reports/TEST-*.xml; do
+            base=$(basename "$report" .xml); base="${base#TEST-}"; simple="${base##*.}"
+            [ -z "$simple" ] && continue
+            line=$(grep -o '<testsuite[^>]*>' "$report" | head -1)
+            t=$(printf '%s' "$line" | grep -oP 'tests="\K[0-9]+'    | head -1); t=${t:-0}
+            f=$(printf '%s' "$line" | grep -oP 'failures="\K[0-9]+' | head -1); f=${f:-0}
+            e=$(printf '%s' "$line" | grep -oP 'errors="\K[0-9]+'   | head -1); e=${e:-0}
+            s=$(printf '%s' "$line" | grep -oP 'skipped="\K[0-9]+'  | head -1); s=${s:-0}
+            p=$(( t - f - e - s )); [ "$p" -lt 0 ] && p=0
+            case "$simple" in
+              Ticket*) TICKET_T=$(( TICKET_T + t )); TICKET_P=$(( TICKET_P + p )) ;;
+              ExistingFeatureTest) BASE_T=$t; BASE_P=$p ;;
+            esac
+            SUMMARY="${SUMMARY}${simple} ${p}/${t}"$'\n'
+          done
+
+          # La nota es calcula sempre sobre 18, encara que el projecte no compili.
+          GRADE=$(echo "scale=2; $TICKET_P * 10 / 18" | bc | awk '{printf "%.1f", $0}')
+          REGRESSION="false"
+          if [ "$BASE_T" -eq 0 ] || [ "$BASE_P" -lt "$BASE_T" ]; then REGRESSION="true"; fi
+          if [ -z "$SUMMARY" ]; then
+            SUMMARY="No s'ha trobat cap classe de test. Comprova que el projecte compila: mvn -B test"
+          fi
+
+          echo "Tickets: $TICKET_P / 18 · Base: $BASE_P / $BASE_T · Nota: $GRADE · regressió=$REGRESSION"
+          printf '%s\n' "$SUMMARY"
+          {
+            echo "ticket_passed=$TICKET_P"
+            echo "base_passed=$BASE_P"
+            echo "base_total=$BASE_T"
+            echo "grade=$GRADE"
+            echo "regression=$REGRESSION"
+            echo "summary<<SUMMARY_EOF"
+            printf '%s' "$SUMMARY"
+            echo "SUMMARY_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Publica el Challenge Score
+        if: always()
+        uses: actions/github-script@v7.0.1
+        env:
+          TICKET_PASSED: ${{ steps.score.outputs.ticket_passed }}
+          BASE_PASSED: ${{ steps.score.outputs.base_passed }}
+          BASE_TOTAL: ${{ steps.score.outputs.base_total }}
+          GRADE: ${{ steps.score.outputs.grade }}
+          REGRESSION: ${{ steps.score.outputs.regression }}
+          SUMMARY: ${{ steps.score.outputs.summary }}
+          NAME_OK: ${{ steps.student.outputs.ok }}
+        with:
+          script: |
+            const tickets = parseInt(process.env.TICKET_PASSED || '0', 10);
+            const basePassed = parseInt(process.env.BASE_PASSED || '0', 10);
+            const baseTotal = parseInt(process.env.BASE_TOTAL || '0', 10);
+            const nameOk = process.env.NAME_OK === 'true';
+            let title = `Nota ${process.env.GRADE}/10 · Tickets ${tickets}/18 · Base ${basePassed}/${baseTotal}`;
+            if (baseTotal === 0) title = `No compila · ${title}`;
+            else if (process.env.REGRESSION === 'true') title = `Has trencat funcionalitats existents · ${title}`;
+            if (!nameOk) title = `Posa el teu nom a student-info.json · ${title}`;
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'Challenge Score',
+              head_sha: context.sha,
+              status: 'completed',
+              conclusion: (tickets >= 18 && process.env.REGRESSION !== 'true' && nameOk) ? 'success' : 'neutral',
+              output: { title, summary: process.env.SUMMARY || 'Cap classe de test trobada.' }
+            });
+
+      - name: Resum a la pestanya Summary
+        if: always()
+        run: |
+          {
+            echo "## TecnoHostal · Comprovació individual"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Alumne | ${{ steps.student.outputs.name }} |"
+            echo "| Tests de tickets | ${{ steps.score.outputs.ticket_passed }} / 18 |"
+            echo "| ExistingFeatureTest | ${{ steps.score.outputs.base_passed }} / ${{ steps.score.outputs.base_total }} |"
+            echo "| Regressió | ${{ steps.score.outputs.regression }} |"
+            echo "| **Nota** | **${{ steps.score.outputs.grade }} / 10** |"
+            echo ""
+            echo '```'
+            printf '%s\n' "${{ steps.score.outputs.summary }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

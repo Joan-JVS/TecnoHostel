@@ -1,0 +1,211 @@
+###############################################################################
+# TecnoHostal API · peticions HTTP
+#
+# Obre aquest fitxer a IntelliJ (HTTP Client integrat) amb l'aplicació engegada
+# (TecnoHostalApplication o mvn spring-boot:run, port 8080) i prem la fletxa
+# verda de cada petició.
+#
+# La base de dades es torna a carregar des de data.sql cada vegada que reinicies
+# l'aplicació. Les peticions de check-in, check-out i cancel·lació canvien
+# l'estat: si vols tornar a començar, reinicia l'aplicació.
+#
+# SECCIÓ A: endpoints que ja funcionen.
+# SECCIÓ B: el comportament que ha de tenir cada ticket. Fins que no el facis,
+#           pot respondre 404 (endpoint que no existeix) o valors incorrectes.
+###############################################################################
+
+@baseUrl = http://localhost:8080
+
+###############################################################################
+# SECCIÓ A · Endpoints que ja funcionen
+###############################################################################
+
+### A1 · Totes les habitacions (10)
+GET {{baseUrl}}/rooms
+
+### A2 · Una habitació
+GET {{baseUrl}}/rooms/room-301
+
+### A3 · Habitació que no existeix (404)
+GET {{baseUrl}}/rooms/room-999
+
+### A4 · Crear una habitació (201)
+POST {{baseUrl}}/rooms
+Content-Type: application/json
+
+{
+  "roomNumber": "401",
+  "type": "DOUBLE",
+  "pricePerNight": 95.0
+}
+
+### A5 · Tots els clients (6)
+GET {{baseUrl}}/guests
+
+### A6 · Un client
+GET {{baseUrl}}/guests/guest-nuria
+
+### A7 · Crear un client (201, STANDARD si no s'envia vipLevel)
+POST {{baseUrl}}/guests
+Content-Type: application/json
+
+{
+  "name": "Joan Serra",
+  "email": "joan.serra@tecnohostal.cat",
+  "phone": "+34 600 777 777"
+}
+
+### A8 · Email repetit (409)
+POST {{baseUrl}}/guests
+Content-Type: application/json
+
+{
+  "name": "Una altra Anna",
+  "email": "anna.puig@tecnohostal.cat"
+}
+
+### A9 · Totes les reserves (12)
+GET {{baseUrl}}/bookings
+
+### A10 · Una reserva
+GET {{baseUrl}}/bookings/bk-01
+
+### A11 · Crear una reserva (201): Marc, STANDARD, 2 nits a la 302
+POST {{baseUrl}}/bookings
+Content-Type: application/json
+
+{
+  "guestId": "guest-marc",
+  "roomId": "room-302",
+  "checkIn": "2027-03-01",
+  "checkOut": "2027-03-03"
+}
+
+> {%
+    client.global.set("newBookingId", response.body.id);
+%}
+
+### A12 · La reserva que acabes de crear
+GET {{baseUrl}}/bookings/{{newBookingId}}
+
+### A13 · Reservar una habitació OCCUPIED (400)
+POST {{baseUrl}}/bookings
+Content-Type: application/json
+
+{
+  "guestId": "guest-anna",
+  "roomId": "room-103",
+  "checkIn": "2027-03-01",
+  "checkOut": "2027-03-03"
+}
+
+### A14 · Check-in de bk-10 (la 201 passa a OCCUPIED)
+POST {{baseUrl}}/bookings/bk-10/check-in
+
+### A15 · Check-out de bk-08 SENSE body (la 103 torna a AVAILABLE)
+POST {{baseUrl}}/bookings/bk-08/check-out
+
+### A16 · Cancel·lar bk-11
+POST {{baseUrl}}/bookings/bk-11/cancel
+
+###############################################################################
+# SECCIÓ B · Tickets
+###############################################################################
+
+### B1 · Ticket #1 · Laia (SILVER), 3 nits a la 102: ha de costar 162 (180 - 10%)
+POST {{baseUrl}}/bookings
+Content-Type: application/json
+
+{
+  "guestId": "guest-laia",
+  "roomId": "room-102",
+  "checkIn": "2027-01-10",
+  "checkOut": "2027-01-13"
+}
+
+### B1b · Ticket #1 · Núria (GOLD), 2 nits a la 302: ha de costar 374 (440 - 15%)
+POST {{baseUrl}}/bookings
+Content-Type: application/json
+
+{
+  "guestId": "guest-nuria",
+  "roomId": "room-302",
+  "checkIn": "2027-02-01",
+  "checkOut": "2027-02-03"
+}
+
+### B2a · Ticket #2 · DOUBLE disponibles: 201 i 202
+GET {{baseUrl}}/rooms/search?type=DOUBLE
+
+### B2b · Ticket #2 · Disponibles a 90 € o menys: 101, 102, 201 i 202
+GET {{baseUrl}}/rooms/search?maxPrice=90
+
+### B2c · Ticket #2 · Sense paràmetres: les 6 AVAILABLE
+GET {{baseUrl}}/rooms/search
+
+### B2d · Ticket #2 · SUITE en manteniment: 303
+GET {{baseUrl}}/rooms/search?type=SUITE&status=MAINTENANCE
+
+### B3a · Ticket #3 · Check-out de bk-08 amb condició 85: la 103 queda AVAILABLE i condition 85
+POST {{baseUrl}}/bookings/bk-08/check-out
+Content-Type: application/json
+
+{
+  "roomCondition": 85
+}
+
+### B3b · Ticket #3 · Check-out de bk-09 amb condició 20: la 203 passa a MAINTENANCE i el total puja de 330 a 440
+POST {{baseUrl}}/bookings/bk-09/check-out
+Content-Type: application/json
+
+{
+  "roomCondition": 20
+}
+
+### B3c · Ticket #3 · Comprova com han quedat les habitacions
+GET {{baseUrl}}/rooms/room-203
+
+### B4a · Ticket #4 · Se solapa amb bk-10 (Núria, 201, de l'1 al 5/12): 400
+POST {{baseUrl}}/bookings
+Content-Type: application/json
+
+{
+  "guestId": "guest-marc",
+  "roomId": "room-201",
+  "checkIn": "2026-12-03",
+  "checkOut": "2026-12-07"
+}
+
+### B4b · Ticket #4 · Entra el dia que surt la Núria (5/12): 201
+POST {{baseUrl}}/bookings
+Content-Type: application/json
+
+{
+  "guestId": "guest-anna",
+  "roomId": "room-201",
+  "checkIn": "2026-12-05",
+  "checkOut": "2026-12-08"
+}
+
+### B4c · Ticket #4 · La 202 tenia una reserva CANCELLED per a aquestes dates: 201
+POST {{baseUrl}}/bookings
+Content-Type: application/json
+
+{
+  "guestId": "guest-marc",
+  "roomId": "room-202",
+  "checkIn": "2026-12-02",
+  "checkOut": "2026-12-03"
+}
+
+### B5a · Ticket #5 · Historial de l'Anna: totalSpent 390, totalStays 2, bookings bk-11, bk-06, bk-01
+GET {{baseUrl}}/guests/guest-anna/history
+
+### B5b · Ticket #5 · Historial de l'Oriol (cap reserva)
+GET {{baseUrl}}/guests/guest-oriol/history
+
+### B5c · Ticket #5 · Client que no existeix: 404
+GET {{baseUrl}}/guests/guest-999/history
+
+### B6 · Ticket #6 · Informe: SUITE 980, DOUBLE 780, SINGLE 360 (amb les dades inicials)
+GET {{baseUrl}}/reports/revenue

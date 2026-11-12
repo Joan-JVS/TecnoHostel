@@ -3,6 +3,7 @@ package com.tecnocampus.tecnohostal.application;
 import com.tecnocampus.tecnohostal.application.dto.CreateRoomDTO;
 import com.tecnocampus.tecnohostal.application.dto.RoomDTO;
 import com.tecnocampus.tecnohostal.domain.Room;
+import com.tecnocampus.tecnohostal.domain.RoomStatus;
 import com.tecnocampus.tecnohostal.domain.RoomType;
 import com.tecnocampus.tecnohostal.exception.BadRequestException;
 import com.tecnocampus.tecnohostal.exception.ConflictException;
@@ -41,7 +42,16 @@ public class RoomService {
     }
 
     // TODO Ticket #2: mètode que rep els filtres (type, maxPrice, status) i retorna una List<RoomDTO>.
-    public List<R>
+
+    public List<RoomDTO> searchRooms(String type, Double maxPrice, RoomStatus status){
+        return roomRepository.findAll().stream()
+                .filter(room -> type == null || room.getType() == parseType(type))
+                .filter(room -> maxPrice == null || room.getPricePerNight() <= maxPrice)
+                .filter(room -> status == null || room.getStatus() == status)
+                .map(RoomDTO::from)
+                .toList();
+    }
+
 
     private RoomType parseType(String type) {
         try {

@@ -97,4 +97,15 @@ public class Room {
         }
         this.condition = condition;
     }
+
+    public void checkOut(Integer roomCondition) {
+        setCondition(roomCondition);
+
+        if (roomCondition < 50){
+            setStatus(RoomStatus.MAINTENANCE);
+        }else {
+            setStatus(RoomStatus.AVAILABLE);
+        }
+
+    }
 }

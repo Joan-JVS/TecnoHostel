@@ -62,7 +62,6 @@ public class BookingService {
         }
 
         long nights = ChronoUnit.DAYS.between(dto.checkIn(), dto.checkOut());
-        // TODO Ticket #1: no s'aplica el descompte VIP del client (STANDARD 0%, SILVER 10%, GOLD 15%).
         double discount = switch (guest.getVipLevel()){
             case STANDARD -> 0.0;
             case SILVER -> 0.10;
@@ -95,32 +94,12 @@ public class BookingService {
 
         Room room = booking.getRoom();
         booking.setStatus(BookingStatus.CHECKED_OUT);
-        /*room.setStatus(RoomStatus.AVAILABLE);*/
+        room.setStatus(RoomStatus.AVAILABLE);
 
-        // TODO Ticket #3: roomCondition arriba del body {"roomCondition": N}, però no es fa servir.
-        //  - Si és null (check-out sense body), tot ha de quedar com ara.
-        //  - Guarda-la a l'habitació (room.setCondition ja valida que vagi de 0 a 100).
-        //  - N < 50: l'habitació passa a MAINTENANCE en lloc d'AVAILABLE.
-        //  - N < 30: a més, suma una nit (el preu per nit de l'habitació) al totalPrice de la reserva.
-        //  Els dos update(...) de sota ja guarden la reserva i l'habitació amb tots els seus camps.
         if (roomCondition != null){
-            room.setCondition(roomCondition);
-
-            if (roomCondition < 50){
-                room.setStatus(RoomStatus.MAINTENANCE);
-            }else {
-                room.setStatus(RoomStatus.AVAILABLE);
-            }
-
-            if (roomCondition < 30){
-                booking.setTotalPrice(
-                        booking.getTotalPrice() + room.getPricePerNight()
-                );
-            }
-        }else {
-            room.setStatus(RoomStatus.AVAILABLE);
+            room.checkOut(roomCondition);
+            booking.applyCheckoutPenalty(roomCondition);
         }
-
         bookingRepository.update(booking);
         roomRepository.update(room);
         return BookingDTO.from(booking);

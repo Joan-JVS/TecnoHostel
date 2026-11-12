@@ -3,6 +3,9 @@ package com.tecnocampus.tecnohostal.api;
 import com.tecnocampus.tecnohostal.application.GuestService;
 import com.tecnocampus.tecnohostal.application.dto.CreateGuestDTO;
 import com.tecnocampus.tecnohostal.application.dto.GuestDTO;
+import com.tecnocampus.tecnohostal.application.dto.GuestHistoryDTO;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
@@ -35,4 +38,8 @@ public class GuestRestController {
     }
 
     // TODO Ticket #5: GET /guests/{id}/history, retorna un GuestHistoryDTO
+    @GetMapping("/{id}/history")
+    public GuestHistoryDTO getGuestHistory(@PathVariable String id){
+        return guestService.getGuestHistory(id);
+    }
 }

@@ -8,6 +8,11 @@ import com.tecnocampus.tecnohostal.exception.BadRequestException;
 import com.tecnocampus.tecnohostal.exception.ConflictException;
 import com.tecnocampus.tecnohostal.exception.NotFoundException;
 import com.tecnocampus.tecnohostal.persistence.GuestRepository;
+import com.tecnocampus.tecnohostal.persistence.BookingRepository;
+import com.tecnocampus.tecnohostal.application.dto.GuestHistoryDTO;
+import com.tecnocampus.tecnohostal.application.dto.BookingDTO;
+import com.tecnocampus.tecnohostal.domain.Booking;
+import com.tecnocampus.tecnohostal.domain.BookingStatus;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -16,9 +21,11 @@ import java.util.List;
 public class GuestService {
 
     private final GuestRepository guestRepository;
+    private final BookingRepository bookingRepository;
 
-    public GuestService(GuestRepository guestRepository) {
+    public GuestService(GuestRepository guestRepository, BookingRepository bookingRepository) {
         this.guestRepository = guestRepository;
+        this.bookingRepository = bookingRepository;
     }
 
     public List<GuestDTO> getAllGuests() {
@@ -45,6 +52,33 @@ public class GuestService {
     //  - totalSpent i totalStays només compten les reserves CHECKED_OUT.
     //  - bookings: TOTES les reserves del client com a BookingDTO, de la més nova a la més antiga
     //    (per checkIn). BookingDTO.from(booking) ja fa la conversió.
+    public GuestHistoryDTO getGuestHistory(String guestId){
+        Guest guest = findGuest(guestId);
+
+        List<Booking> bookings = bookingRepository.findAll().stream()
+                .filter(b -> b.getGuest().getId().equals(guestId))
+                .sorted((b1, b2) -> b2.getCheckIn().compareTo(b1.getCheckIn()))
+                .toList();
+
+        double totalSpent = bookings.stream()
+                .filter(b -> b.getStatus() == BookingStatus.CHECKED_OUT)
+                .mapToDouble(Booking::getTotalPrice)
+                .sum();
+
+        int totalStays = (int) bookings.stream()
+                .filter(b -> b.getStatus() == BookingStatus.CHECKED_OUT)
+                .count();
+
+        List<BookingDTO> bookingDTOS = bookings.stream()
+                .map(BookingDTO::from)
+                .toList();
+
+        return new GuestHistoryDTO(
+                GuestDTO.from(guest),
+                totalSpent,
+                totalStays,
+                bookingDTOS);
+    }
 
     private Guest findGuest(String id) {
         return guestRepository.findById(id)

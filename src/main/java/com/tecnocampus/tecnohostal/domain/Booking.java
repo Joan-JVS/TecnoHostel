@@ -100,4 +100,12 @@ public class Booking {
         validateTotalPrice(totalPrice);
         this.totalPrice = totalPrice;
     }
+
+    public void applyCheckoutPenalty(Integer roomCondition) {
+        if (roomCondition < 30){
+            setTotalPrice(
+                    getTotalPrice() + room.getPricePerNight()
+            );
+        }
+    }
 }
